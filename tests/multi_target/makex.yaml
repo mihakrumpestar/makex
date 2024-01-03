@@ -1,0 +1,4 @@
+subfolder: "subfolder"
+orchestrator: "docker-compose"
+target: "test-2"
+multiple_targets: true

@@ -1,4 +1,4 @@
-package flags
+package config_flags
 
 import (
 	"makex/pkg/orchestrators"

@@ -15,6 +15,13 @@ run:
 build:
 	$(GO_RUN_BUILD)
 
+test:
+	cd tests/single_target && go run ../../main.go deploy
+	# cd tests/single_target && go run ../../main.go destroy
+
+	# cd tests/multi_target && go run ../../main.go deploy
+	# cd tests/multi_target && go run ../../main.go destroy
+
 fmt:
 	go fmt ./...
 

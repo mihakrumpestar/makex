@@ -3,9 +3,9 @@ package configs
 import (
 	"context"
 	"fmt"
+	"makex/configs/config_flags"
 	configs_deploy "makex/configs/deploy"
 	configs_destroy "makex/configs/destroy"
-	"makex/configs/flags"
 	"makex/internal/helpers"
 	"makex/pkg/orchestrators"
 	"makex/pkg/secrets"
@@ -28,14 +28,14 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute(ctx context.Context, configFiles []string) error {
-	rootCmd.PersistentFlags().StringVar(flags.Flags.Subfolder, "subfolder", ".", "subfolder where targets reside or the current directory")
+	rootCmd.PersistentFlags().StringVar(config_flags.Flags.Subfolder, "subfolder", ".", "subfolder where targets reside or the current directory")
 	var orchestratorsLocal = new([]string)
-	rootCmd.PersistentFlags().StringArrayVarP(orchestratorsLocal, "orchestrator", "o", []string{orchestrators.DockerCompose.String()}, "orchestrator plugins to use")
+	rootCmd.PersistentFlags().StringSliceVarP(orchestratorsLocal, "orchestrator", "o", []string{orchestrators.DockerCompose.String()}, "orchestrator plugins to use")
 	var secretsLocal = new(string)
 	rootCmd.PersistentFlags().StringVarP(secretsLocal, "secrets", "s", secrets.Sops.String(), "secrets plugin to use")
-	rootCmd.PersistentFlags().StringVarP(flags.Flags.Target, "target", "t", "", "name of the project/subproject you want to do things to")
-	rootCmd.PersistentFlags().BoolVarP(flags.Flags.MultipleTargets, "multipleTargets", "m", false, "if multiple targets in subdirectory (default is false)")
-	rootCmd.PersistentFlags().StringVarP(flags.Flags.Environment, "environment", "e", "", "the environment to load (default is empty)")
+	rootCmd.PersistentFlags().StringVarP(config_flags.Flags.Target, "target", "t", "", "name of the project/subproject you want to do things to")
+	rootCmd.PersistentFlags().BoolVarP(config_flags.Flags.MultipleTargets, "multipleTargets", "m", false, "if multiple targets in subdirectory (default is false)")
+	rootCmd.PersistentFlags().StringVarP(config_flags.Flags.Environment, "environment", "e", "", "the environment to load (default is empty)")
 
 	// Bind the current command's flags to Viper, this won't place Vipers values into Cobra flags automatically tho
 	err := viper.BindPFlags(rootCmd.PersistentFlags())
@@ -48,25 +48,31 @@ func Execute(ctx context.Context, configFiles []string) error {
 		return err
 	}
 
-	UpdateFlagsFromViper(orchestratorsLocal, secretsLocal)
+	err = UpdateFlagsFromViper(orchestratorsLocal, secretsLocal)
+	if err != nil {
+		return err
+	}
 
 	// Load subpath now that we have it in config
-	subfolder := *flags.Flags.Subfolder
-	multipleTargets := *flags.Flags.MultipleTargets
+	subfolder := *config_flags.Flags.Subfolder
+	multipleTargets := *config_flags.Flags.MultipleTargets
 	if subfolder != "" && multipleTargets {
 		if multipleTargets {
-			subfolder += "/" + *flags.Flags.Target
+			subfolder += "/" + *config_flags.Flags.Target
 		}
 		configFiles, err = helpers.FindFilesFromBaseDir(subfolder, []string{""}, "makex", []string{"yaml", "yml"}, false)
 		if err != nil {
 			log.Fatal().Stack().Err(err).Msg("")
 		}
 
-		UpdateFlagsFromViper(orchestratorsLocal, secretsLocal)
+		err = UpdateFlagsFromViper(orchestratorsLocal, secretsLocal)
+		if err != nil {
+			return err
+		}
 	}
 
 	if zerolog.GlobalLevel() == zerolog.DebugLevel {
-		dump.P(flags.Flags)
+		dump.P(config_flags.Flags)
 	}
 
 	rootCmd.AddCommand(configs_deploy.DeployCmd)
@@ -110,37 +116,44 @@ func readAndMergeConfigFiles(configFiles []string) error {
 }
 
 func UpdateFlagsFromViper(orchestratorsLocal *[]string, secretsLocal *string) error {
-	var err error
+	var errE error
 
 	rootCmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
 		// Only update the flags if they haven't been set by the user or stayed default
 		if !f.Changed {
 			val := viper.Get(f.Name)
 			if val != nil {
-				err = rootCmd.PersistentFlags().Set(f.Name, fmt.Sprintf("%v", val))
+				err := rootCmd.PersistentFlags().Set(f.Name, fmt.Sprintf("%v", val))
 				if err != nil {
+					errE = err
 					return
 				}
+
+				log.Debug().Str("viper update to cobra", fmt.Sprintf("%s=%s", f.Name, val)).Msg("")
 			}
 		}
 	})
 
-	if err != nil {
-		return err
+	if errE != nil {
+		return errE
 	}
 
 	// validate flags
+	log.Debug().Strs("orchestratorsLocal", *orchestratorsLocal).Msg("validate flags")
+
 	orchestratorsL, err := orchestrators.FromStringArray(*orchestratorsLocal)
 	if err != nil {
 		return err
 	}
-	flags.Flags.Orchestrator = &orchestratorsL
+	*config_flags.Flags.Orchestrator = orchestratorsL
+
+	log.Debug().Str("secretsLocal", *secretsLocal).Msg("validate flags")
 
 	secretsL, err := secrets.FromString(*secretsLocal)
 	if err != nil {
 		return err
 	}
-	flags.Flags.Secrets = &secretsL
+	*config_flags.Flags.Secrets = secretsL
 
 	return nil
 }

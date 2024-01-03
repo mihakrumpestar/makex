@@ -1,0 +1,2 @@
+orchestrator: "docker-build,docker-compose"
+target: test

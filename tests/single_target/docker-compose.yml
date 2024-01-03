@@ -1,0 +1,7 @@
+version: "3"
+
+services:
+  whoami:
+    build: $(MAIN_DOMAIN)/whoami:latest
+    ports:
+      - "8000:8000"
